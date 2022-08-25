@@ -9,15 +9,17 @@ SYS.note={'State space matrices for the augmented model for Kalman filtering, al
 
 %% Variable initializations
 %%% Simulation variables %%%
-f_lowpass=0.001; %Hz, all integrals are just low pass filters in disguise
+if exist('f_lowpass','var') == 0
+    f_lowpass=0.001; %Hz, all integrals are just low pass filters in disguise
+end
 
 %% Define the dynamical system
 
 %%% Physical variables %%%
 g=9.81; % gravitational acceleration [m/s^2]
-L=5; %length of the pendlum stage [m]
+L=0.031; %length of the pendlum stage [m]
 m=1; %Mass of the pendulum [kg]
-b=0.1; %Viscous damping coefficient [Ns/m]
+b=0.0001; %Viscous damping coefficient [Ns/m]
 
 if exist('var_as','var') == 0
     var_as=1; %Variance of the acceleration noise [m/s^2]^2
@@ -55,7 +57,7 @@ DYN.Rc=DYN.Vc*transpose(DYN.Vc);
 
 % get the size of the state space
 DYN.size=size(DYN.A,1);
-
+DYN.A=DYN.A-2*pi*f_lowpass*eye(DYN.size);
 DYN=Discretize(DYN,dt,f_lowpass);
 
 %%% The Kalman filter model assumes high covariance for the acceleration of
@@ -65,7 +67,27 @@ DYN.Qk(3,3)=var_as*dt;
 
 DYN.Qck=DYN.Qc;
 DYN.Qck(3,3)=var_as;
-          
+
+%%
+
+
+
+
+
+
+%       xs    x1    xs'  x1' 
+DYN.Qk=[0,    0,    0,    0;   % xs'
+        0,    0,    0,    0;   % x1'
+        0,    0,  var_as, 0;   % xs''
+        0,    0,    0,    0]; % x1''
+    
+    
+    
+    
+    
+    
+    
+    
 %% Create the noise states
 %The noise states are handled by subroutines that can be tested and
 %debugged independently
@@ -104,6 +126,11 @@ SYS.Qk(1:DYN.size,1:DYN.size)=DYN.Qk;
 SYS.Qck=SYS.Qc;
 SYS.Qck(1:DYN.size,1:DYN.size)=DYN.Qck;
 
+%Same thing for the noise matrix, in case it is ever useful
+SYS.Wck=SYS.Wc;
+SYS.Wck(3,1)=sqrt(var_as);
+SYS.Wk=SYS.Wck*sqrt(dt);
+
 % Pass other important information about the model
 SYS.dt=dt; 
 SYS.f_lowpass=f_lowpass;
@@ -131,6 +158,7 @@ debug_flag=0;
      GS13.A=[-2*pi*diag(f_pink), zeros(n_pink,1), zeros(n_pink,1);  % nu_pink'
                ones(1,n_pink)  ,      0         ,        0       ;  % nu_pink_int'
                zeros(1,n_pink) ,      1         ,        0       ]; % nu_pink_int_int'
+           
 
      %              as              f1    
      GS13.B=[zeros(n_pink,1), zeros(n_pink,1);  % nu_pink'
@@ -139,7 +167,7 @@ debug_flag=0;
 
      %              nu_pink        nu_pink_int     nu_pink_int_int
      GS13.C=[zeros(1,n_pink),           0       ,          1      ; % y1 (GS13 velocity measurement)
-             zeros(1,n_pink),           0       ,          0      ];% y2 (OSEM velocity measurement)
+             zeros(1,n_pink),           0       ,          0      ];% y2 (OSEM displacement measurement)
 
      %             wpink
      GS13.Wc=[2*pi*f_pink.*g_pink; % nu_pink'
@@ -148,7 +176,7 @@ debug_flag=0;
 
      %          nu_white GS13
      GS13.Vc=[     g_white        ; % y1 (GS13 velocity measurement)
-                     0           ];% y2 (OSEM velocity measurement)
+                     0           ];% y2 (OSEM displacement measurement)
                  
     %Continuous time covariances
     GS13.Qc=GS13.Wc*transpose(GS13.Wc);
@@ -158,7 +186,7 @@ debug_flag=0;
      GS13.freq=logspace(-2,2,1000); 
      GS13.intended_noise = SEI_sensor_noise('GS13meas',GS13.freq); 
      GS13.size=size(GS13.A,1);
-    
+     GS13.A=GS13.A-2*pi*f_lowpass*eye(GS13.size);
     %%% Discretize the equations %%%
     GS13=Discretize(GS13,dt,f_lowpass);
     
@@ -166,9 +194,9 @@ debug_flag=0;
     if(debug_flag)
         n_debug=0;
         for i=1:n_pink
-            n_debug=n_debug+g_pink(i)./((1i)*freq./f_pink(i)+1);
+            n_debug=n_debug+g_pink(i)./((1i)*GS13.freq./f_pink(i)+1);
         end
-        resp_debug=sqrt((abs(n_debug)./(2*pi*freq).^2).^2+GS13.Vc(1).^2);
+        resp_debug=sqrt((abs(n_debug)./(2*pi*GS13.freq).^2).^2+GS13.Vc(1).^2);
         
         %simulate the noise
         T=1000;
@@ -178,7 +206,7 @@ debug_flag=0;
         y=zeros(2,N);
         w=transpose(mvnrnd(zeros(size(GS13.Q,1),1),GS13.Q,N));
         v=transpose(mvnrnd(zeros(size(GS13.R,1),1),GS13.R,N));
-        disp(size(w))
+
         for i=1:(N-1)
             X(:,i+1)=GS13.F*X(:,i)+w(:,i);
             y(:,i+1)=GS13.H*X(:,i+1)+v(:,i+1);
@@ -187,8 +215,8 @@ debug_flag=0;
         [asd_noise,freq2]=asd2(y(1,:), dt,  5, 3, @hann, 'symmetric');
         
         %%% PLOT %%%
-        figure,test=loglog(freq2,asd_noise,freq,GS13.intended_noise.*(2*pi*freq),...
-                            freq,sqrt(2)*resp_debug); %Don't forget sqrt(2) for the ASD
+        figure,test=loglog(freq2,asd_noise,GS13.freq,GS13.intended_noise.*(2*pi*GS13.freq),...
+                            GS13.freq,sqrt(2)*resp_debug); %Don't forget sqrt(2) for the ASD
         grid on; title("SS debugging for GS13 Noise"); ylabel("Amplitude [m/s\cdot\surd{Hz}]");
         xlabel("Frequency [Hz]"); set(test(2:3),"linewidth",3); set(gca,"fontsize",14);
         xlim([10^-2,10^2])
@@ -230,7 +258,6 @@ debug_flag=0;
      OSEM.Wc=[2*pi*f_pink.*g_pink, zeros(n_pink,1); % nu_pink'
                     0           ,    g_brown     ]; % nu_pink_int'
 
-
      %          nu_white GS13
      OSEM.Vc=[        0           ; % y1 (GS13 velocity measurement)
                   g_white        ];% y2 (OSEM velocity measurement)
@@ -243,7 +270,7 @@ debug_flag=0;
      OSEM.freq=logspace(-2,2,1000);
      OSEM.intended_noise = HAM_SUS_OSEM_noise('L',OSEM.freq); 
      OSEM.size=size(OSEM.A,1); 
-    
+     OSEM.A=OSEM.A-2*pi*f_lowpass*eye(OSEM.size);
     %%% Discretize the equations %%%
     OSEM=Discretize(OSEM,dt,f_lowpass);
     
@@ -292,7 +319,7 @@ function Disc=Discretize(Cont,dt,f_lowpass)
 Disc=Cont;
 
 % All integrals are lowpass filters in disguise
-Disc.A=Disc.A-2*pi*f_lowpass*eye(Cont.size); 
+%Disc.A=Disc.A-2*pi*f_lowpass*eye(Cont.size); 
 
 % Discretize the dynamics
 Disc.F=expm(Disc.A*dt);

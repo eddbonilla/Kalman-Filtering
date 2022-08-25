@@ -14,16 +14,6 @@ run singlesus_SS.m %Create the actual model
 %                     inputs , noises
 Contss.real=ss(SYS.A,[ SYS.B , SYS.Wc ],eye(SYS.size),[]); %We need to add the noises as inputs to the noise states.
 
-%Construct the state estimator
-%                                                  inputs    measurements
-Contss.kalman=ss(SYS.A-transpose(SYS.Kc_t)*SYS.C,[ SYS.B ,transpose(SYS.Kc_t)],eye(SYS.size),[]); %We add the measurements as inputs to the state estimator
-
-%Construct the equivalent discrete-time object for filtering
-Discss.real=c2d(ss(SYS.A,SYS.B,SYS.C,[]),dt);
-[P,K]=idare(transpose(Discss.real.A),transpose(SYS.H),SYS.Qk,SYS.R);
-Discss.kalman=ss(Discss.real.A*(eye(SYS.size)-transpose(K)*SYS.H),...
-    [Discss.real.B, Discss.real.A*transpose(K)],...
-    eye(SYS.size),[],dt);
 %% Define the inputs for the state-space system
 %%% REAL INPUTS %%%
 %Suspoint acceleration
@@ -55,8 +45,27 @@ X0=10^-9*rand(SYS.size,1); %Some random initialization
 
 X=transpose(lsim(Contss.real,[u;w],t,X0));     % System simulation
 y=SYS.C*X+v;                  % Simulate the GS13 and OSEM measurements
-X_pred=transpose(lsim(Contss.kalman,[uk;y],t));% Kalman filter the measurements
-X_pred_disc=transpose(lsim(Discss.kalman,[uk;y],t)); %Discrete Kalman filter
+%% Construct the Kalman Estimator:
+
+%Define the modeled system, which is seen by the Kalman estimator.
+%                     inputs      noise
+Modeled_ss=ss(SYS.A,[ SYS.B   ,  SYS.Wck], SYS.C,[]);
+
+%Continuous Kalman filter -> Simulated
+[kest_cont,~,~] = kalman(Modeled_ss,eye(size(SYS.Wck,2)),SYS.Rc);
+X_pred=transpose(lsim(c2d(kest_cont,dt),[uk;y],t)); %Continuous Kalman filter
+
+%Permute ins and outs to get the order x,y. 
+X_pred=X_pred([(size(Modeled_ss.C,1)+1):end 1:size(Modeled_ss.C,1)],:);
+
+%Discrete Kalman estimator
+[kest_disc,~,~,~,~] = kalmd(Modeled_ss,eye(size(SYS.Wck,2)),SYS.Rc,dt);
+X_pred_disc=transpose(lsim(kest_disc,[uk;y],t)); %Discrete Kalman filter
+
+%Permute ins and outs to get the order x,y. 
+X_pred_disc=X_pred_disc([(size(Modeled_ss.C,1)+1):end 1:size(Modeled_ss.C,1)],:);
+
+
 %% CALCULATE ASD FOR RECORD KEEPING
 
 %%% Frequency domain %%%
@@ -139,4 +148,4 @@ grid on, xlim([0,T/60]);
 set(gca,'fontsize',15)
 legend('Kalman prediction','Kalman prediction (discrete)','GS13 measurement')
 xlabel('Time [min]')
-ylabel('Amplitude [m]')
+ylabel('Amplitude [m/s]')

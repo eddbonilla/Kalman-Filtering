@@ -30,7 +30,7 @@ H=[  1 ,0, 0;
     ];
 % Process noise covariance matrix, we assume that there is input noise in
 % all hidden states. 
-var_xs=10^10; %process covariance for the position x_s, assumed to be essentially infinite
+var_xs=0.001; %process covariance for the position x_s, assumed to be essentially infinite
 var_x1=0;% process covariance for the position x_1, I don't know what to put in here
 var_x1dot=0; %process covaricance for the velocity, this one is easily understood as random forces
 
@@ -54,7 +54,7 @@ nOSEM=normrnd(0,sqrt(var_OSEM),1,N);
 xs_in=10*exp(-sqrt(t)-sin(5*t));
 f1_in=1*exp(-sin(2*pi*2*t-3)).*exp(-sqrt((t-5).^2+0.1))-1*exp(-sin(2*pi*2*t-3)).*exp(-sqrt((t-15).^2+0.1)); 
 
-xs_actual=0.1*exp(-cos(1.3*t-3)).*exp(-sqrt((t-5).^2+0.1));%Actual xs, that should be observed by the GS13
+xs_actual=0.5*exp(-cos(1.3*t-3)).*exp(-sqrt((t-5).^2+0.1));%Actual xs, that should be observed by the GS13
 
 %Actual input notation
 u_actual= zeros(2,N);
@@ -105,9 +105,14 @@ for i=1:(N-1)
     P(:,:,i+1)=(eye(3)-K(:,:,i+1)*H)*P_minus;
     %P(:,:,i+1)=(P(:,i+1)+transpose(P(:,i+1)))/2;
     X_pred(:,i+1)=(eye(3)-K(:,:,i+1)*H)*X_minus(:,i+1)+K(:,:,i+1)*y(:,i+1);
-    X_pred2(:,i+1)=(eye(3)-K2*H)*(F*X_pred2(:,i)+G*u_model(:,i))+K2*y(:,i+1);
+    %X_pred2(:,i+1)=(eye(3)-K2*H)*(F*X_pred2(:,i)+G*u_model(:,i))+K2*y(:,i+1);
     y_low(:,i+1)=(1-dt/tau)*y_low(:,i)+dt/tau*y(:,i+1);
 end
+
+for i=1:(N-1)
+    X_pred2(:,i+1)=(eye(3)-K(:,:,N)*H)*(F*X_pred2(:,i)+G*u_model(:,i))+K(:,:,N)*y(:,i+1);
+end
+
 %% Plotting
 K(:,:,i+1)
 % Plot the predicted X1 motion
